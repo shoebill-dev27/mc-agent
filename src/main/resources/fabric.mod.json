@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "mcagent",
+  "version": "${version}",
+  "name": "mc-agent",
+  "description": "Operate AI coding agents (Claude Code and other ACP agents) from inside Minecraft. Each session is an allay you can watch, talk to, and kill.",
+  "authors": ["shinobu"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.shinobu.mcagent.McAgent"],
+    "client": ["dev.shinobu.mcagent.client.McAgentClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

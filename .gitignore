@@ -1,0 +1,27 @@
+# Secrets — this project intentionally stores none, but never let any slip in.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Build output
+build/
+out/
+.gradle/
+*.class
+
+# Minecraft dev runtime (worlds, logs, generated configs)
+run/
+
+# Node (probe tooling only)
+node_modules/
+
+# Editors / agents
+.claude/
+.cursor/
+.vscode/
+.idea/
+*.iml
