@@ -147,6 +147,49 @@ Parse defensively and ignore unknown `type` values rather than failing.
 - `authMethods: []` — no auth step. The adapter reuses the host's existing
   Claude Code credentials. The mod stores no secrets, as designed.
 
+## 7a. `session/close` verified, and `session/new` gives more than a session id
+
+`session/close` exists and answers `{}`. Ending a session is a real operation,
+not something we have to fake with `cancel`.
+
+The `session/new` result also carries two things worth building on:
+
+```json
+{
+  "sessionId": "...",
+  "modes": {
+    "currentModeId": "default",
+    "availableModes": [
+      { "id": "auto",              "name": "Auto" },
+      { "id": "default",           "name": "Default" },
+      { "id": "acceptEdits",       "name": "Accept Edits" },
+      { "id": "plan",              "name": "Plan Mode" },
+      { "id": "dontAsk",           "name": "Don't Ask" },
+      { "id": "bypassPermissions", "name": "Bypass Permissions" }
+    ]
+  },
+  "configOptions": [
+    { "id": "mode",   "category": "mode",          "type": "select", "currentValue": "default" },
+    { "id": "model",  "category": "model",         "type": "select", "currentValue": "sonnet" },
+    { "id": "effort", "category": "thought_level", "type": "select", "currentValue": "default" }
+  ]
+}
+```
+
+- **Permission modes are the agent's own feature.** `acceptEdits`, `dontAsk`
+  and `bypassPermissions` change how often we are asked at all, and `plan`
+  runs without executing tools. Exposing these in-game is a phase-2 item, but
+  note the safety consequence: `bypassPermissions` would silence the approval
+  flow entirely. If it is ever surfaced, it belongs behind the same second
+  confirmation as "always allow", or omitted.
+- **Model and effort switching come free** via `configOptions`, each an
+  enumerated `select` with its current value. Phase 2's model switcher is a
+  menu built from this list, not something we have to invent.
+
+An `available_commands_update` notification arrives immediately after the
+session opens, so slash-command completion has its list before the player can
+type anything.
+
 ## 8. Startup latency is a real UX problem
 
 | run | time to `initialize` response |

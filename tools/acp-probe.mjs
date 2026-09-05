@@ -11,6 +11,7 @@
  * Usage:
  *   node tools/acp-probe.mjs --stage init
  *   node tools/acp-probe.mjs --stage session --cwd /abs/path
+ *   node tools/acp-probe.mjs --stage close   --cwd /abs/path
  *   node tools/acp-probe.mjs --stage prompt  --cwd /abs/path --prompt "..."
  *
  * Stages are cumulative: `prompt` runs init + session + prompt.
@@ -55,8 +56,8 @@ function parseArgs(argv) {
       default: throw new Error(`unknown option: ${argv[i]}`);
     }
   }
-  if (!["init", "session", "prompt"].includes(out.stage)) {
-    throw new Error(`--stage must be one of init|session|prompt`);
+  if (!["init", "session", "close", "prompt"].includes(out.stage)) {
+    throw new Error(`--stage must be one of init|session|close|prompt`);
   }
   return out;
 }
@@ -240,6 +241,14 @@ async function main() {
   const session = await request("session/new", { cwd: opts.cwd, mcpServers: [] });
   note(`sessionId: ${JSON.stringify(session?.sessionId)}`);
   if (opts.stage === "session") return;
+
+  if (opts.stage === "close") {
+    // Verifying that session/close really exists, rather than trusting the
+    // capability flag. An error here means the mod must fall back to cancel.
+    const closed = await request("session/close", { sessionId: session.sessionId });
+    note(`session/close returned: ${JSON.stringify(closed)}`);
+    return;
+  }
 
   const promptResult = await request("session/prompt", {
     sessionId: session.sessionId,
