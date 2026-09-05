@@ -1,0 +1,7 @@
+{
+  "mcagent.state.idle": "待機中",
+  "mcagent.state.thinking": "思考中",
+  "mcagent.state.working": "実行中",
+  "mcagent.state.awaiting": "承認待ち",
+  "mcagent.state.error": "エラー"
+}

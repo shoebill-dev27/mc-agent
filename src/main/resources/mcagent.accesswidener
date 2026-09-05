@@ -1,0 +1,22 @@
+accessWidener v2 official
+
+# Display entities carry everything they show in synched data, with only
+# private setters — vanilla drives them from NBT and the /data command, so no
+# public API was ever needed. The avatar's overhead panel is updated many
+# times a second, which NBT round trips are the wrong tool for, so the setters
+# are opened up instead.
+
+accessible	method	net/minecraft/world/entity/Display	setBillboardConstraints	(Lnet/minecraft/world/entity/Display$BillboardConstraints;)V
+accessible	method	net/minecraft/world/entity/Display	setViewRange	(F)V
+accessible	method	net/minecraft/world/entity/Display	setBrightnessOverride	(Lnet/minecraft/util/Brightness;)V
+accessible	method	net/minecraft/world/entity/Display	setTransformation	(Lcom/mojang/math/Transformation;)V
+
+# Position interpolation: without this the panel teleports a block at a time
+# as the allay orbits, because the client only smooths a Display when it is
+# told how long the move should take.
+accessible	method	net/minecraft/world/entity/Display	setPosRotInterpolationDuration	(I)V
+
+accessible	method	net/minecraft/world/entity/Display$TextDisplay	setText	(Lnet/minecraft/network/chat/Component;)V
+accessible	method	net/minecraft/world/entity/Display$TextDisplay	setLineWidth	(I)V
+accessible	method	net/minecraft/world/entity/Display$TextDisplay	setBackgroundColor	(I)V
+accessible	method	net/minecraft/world/entity/Display$TextDisplay	setFlags	(B)V

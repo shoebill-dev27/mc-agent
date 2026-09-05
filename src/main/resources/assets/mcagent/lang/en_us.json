@@ -1,0 +1,7 @@
+{
+  "mcagent.state.idle": "Idle",
+  "mcagent.state.thinking": "Thinking",
+  "mcagent.state.working": "Working",
+  "mcagent.state.awaiting": "Needs approval",
+  "mcagent.state.error": "Error"
+}
