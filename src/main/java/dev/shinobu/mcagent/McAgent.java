@@ -1,8 +1,10 @@
 package dev.shinobu.mcagent;
 
+import dev.shinobu.mcagent.command.AgentCommands;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.world.InteractionResult;
 import org.slf4j.Logger;
@@ -59,6 +61,9 @@ public class McAgent implements ModInitializer {
                     ? InteractionResult.FAIL
                     : InteractionResult.PASS;
         });
+
+        CommandRegistrationCallback.EVENT.register(
+                (dispatcher, registryAccess, environment) -> AgentCommands.register(dispatcher));
 
         LOGGER.info("mc-agent initialised");
     }
