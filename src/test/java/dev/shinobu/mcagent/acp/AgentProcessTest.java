@@ -3,13 +3,10 @@ package dev.shinobu.mcagent.acp;
 import dev.shinobu.mcagent.acp.model.InitializeResult;
 import dev.shinobu.mcagent.acp.model.PermissionRequest;
 import dev.shinobu.mcagent.acp.model.SessionUpdate;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -39,37 +36,6 @@ class AgentProcessTest {
 
     private static final long TIMEOUT_MS = 10_000;
 
-    /**
-     * A shell script that speaks just enough ACP: it answers {@code initialize}
-     * and {@code session/new}, then sits reading stdin so it stays alive until
-     * something closes it.
-     *
-     * <p>Request ids are tracked with a counter rather than parsed, which holds
-     * because the client numbers its requests from 1 and this test sends only
-     * requests — no notifications — before closing.
-     */
-    private static final String FAKE_AGENT = """
-            echo 'starting up' >&2
-            n=0
-            while IFS= read -r line; do
-              n=$((n+1))
-              case "$line" in
-                *initialize*)
-                  printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"fake","title":"Fake Agent","version":"9.9.9"},"agentCapabilities":{"sessionCapabilities":{"close":{}}},"authMethods":[]}}\\n' "$n"
-                  ;;
-                *session/new*)
-                  printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s1"}}\\n' "$n"
-                  ;;
-              esac
-            done
-            """;
-
-    /** An agent that greets stderr and exits immediately, like a bad command. */
-    private static final String FAILING_AGENT = """
-            echo 'command not found: claude-agent-acp' >&2
-            exit 127
-            """;
-
     private static final class TestListener implements SessionListener {
         final BlockingQueue<String> disconnects = new ArrayBlockingQueue<>(8);
 
@@ -90,18 +56,16 @@ class AgentProcessTest {
 
     @BeforeEach
     void requirePosixShell() {
-        Assumptions.assumeFalse(
-                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows"),
-                "the stand-in agent is a POSIX shell script");
+        TestAgents.requirePosixShell();
     }
 
     private static AgentSpec fakeAgent(String script) {
-        return new AgentSpec("fake", "sh", List.of("-c", script), java.util.Map.of());
+        return TestAgents.spec("fake", script);
     }
 
     @Test
     void spawnsAndInitializesAgainstARealProcess() throws Exception {
-        try (AgentProcess agent = AgentProcess.spawn(fakeAgent(FAKE_AGENT), null, null)) {
+        try (AgentProcess agent = AgentProcess.spawn(fakeAgent(TestAgents.COOPERATIVE), null, null)) {
             InitializeResult result = agent.initialize().get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
             assertEquals(1, result.protocolVersion());
@@ -114,7 +78,7 @@ class AgentProcessTest {
 
     @Test
     void capturesStderrForDiagnosingAFailedAgent() throws Exception {
-        try (AgentProcess agent = AgentProcess.spawn(fakeAgent(FAKE_AGENT), null, null)) {
+        try (AgentProcess agent = AgentProcess.spawn(fakeAgent(TestAgents.COOPERATIVE), null, null)) {
             agent.initialize().get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
             // The pump runs on its own thread; the handshake has given it time.
@@ -126,7 +90,7 @@ class AgentProcessTest {
     /** The acceptance criterion: killing a session must not leave a process. */
     @Test
     void closeTerminatesTheProcess() throws Exception {
-        AgentProcess agent = AgentProcess.spawn(fakeAgent(FAKE_AGENT), null, null);
+        AgentProcess agent = AgentProcess.spawn(fakeAgent(TestAgents.COOPERATIVE), null, null);
         agent.initialize().get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
         assertTrue(agent.isAlive());
 
@@ -137,7 +101,7 @@ class AgentProcessTest {
 
     @Test
     void closeIsSafeToCallTwice() throws Exception {
-        AgentProcess agent = AgentProcess.spawn(fakeAgent(FAKE_AGENT), null, null);
+        AgentProcess agent = AgentProcess.spawn(fakeAgent(TestAgents.COOPERATIVE), null, null);
         agent.initialize().get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
         agent.close();
@@ -149,7 +113,7 @@ class AgentProcessTest {
     @Test
     void anAgentThatDiesTellsItsSessions() throws Exception {
         TestListener listener = new TestListener();
-        try (AgentProcess agent = AgentProcess.spawn(fakeAgent(FAKE_AGENT), null, null)) {
+        try (AgentProcess agent = AgentProcess.spawn(fakeAgent(TestAgents.COOPERATIVE), null, null)) {
             agent.initialize().get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
             // The session must actually open: the listener is registered when
             // session/new answers, not when it is sent.
@@ -168,7 +132,7 @@ class AgentProcessTest {
      */
     @Test
     void aFailingCommandSurfacesRatherThanHanging() throws Exception {
-        try (AgentProcess agent = AgentProcess.spawn(fakeAgent(FAILING_AGENT), null, null)) {
+        try (AgentProcess agent = AgentProcess.spawn(fakeAgent(TestAgents.FAILS_IMMEDIATELY), null, null)) {
             assertThrows(Exception.class,
                     () -> agent.initialize().get(TIMEOUT_MS, TimeUnit.MILLISECONDS),
                     "initialize against a dead agent must fail, not block forever");

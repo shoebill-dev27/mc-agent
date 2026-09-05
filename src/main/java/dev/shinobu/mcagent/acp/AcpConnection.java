@@ -10,10 +10,13 @@ import dev.shinobu.mcagent.acp.model.SessionUpdate;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * ACP spoken over a pair of streams: negotiates {@code initialize}, opens
@@ -44,6 +47,9 @@ public final class AcpConnection implements JsonRpcPeer.Handler, AutoCloseable {
     /** Reported to the caller for logging; not on any hot path. */
     private final BiConsumer<String, Throwable> diagnostics;
 
+    /** Notified once when the connection dies, whatever the cause. */
+    private final List<Consumer<String>> disconnectHooks = new CopyOnWriteArrayList<>();
+
     private volatile InitializeResult initializeResult;
     private volatile boolean disconnected;
 
@@ -62,6 +68,19 @@ public final class AcpConnection implements JsonRpcPeer.Handler, AutoCloseable {
 
     public boolean isDisconnected() {
         return disconnected;
+    }
+
+    /**
+     * Registers an owner-level callback for the connection dying, separate
+     * from the per-session {@link SessionListener#onDisconnected}. The pool
+     * uses it to evict a dead agent even when no session is left to notice.
+     */
+    public void onDisconnect(Consumer<String> hook) {
+        disconnectHooks.add(hook);
+        if (disconnected) {
+            // Already gone; do not let a late registration miss it.
+            hook.accept("connection already disconnected");
+        }
     }
 
     // ------------------------------------------------------------- lifecycle
@@ -254,6 +273,14 @@ public final class AcpConnection implements JsonRpcPeer.Handler, AutoCloseable {
             }
         }
         listeners.clear();
+
+        for (Consumer<String> hook : disconnectHooks) {
+            try {
+                hook.accept(reason);
+            } catch (RuntimeException e) {
+                diagnostics.accept("disconnect hook threw", e);
+            }
+        }
     }
 
     // ----------------------------------------------------------------- helpers
