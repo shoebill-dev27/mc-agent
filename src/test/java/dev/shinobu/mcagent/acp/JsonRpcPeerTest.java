@@ -234,6 +234,26 @@ class JsonRpcPeerTest {
                 "connection should survive one unparseable line");
     }
 
+    /**
+     * A request sent after the peer has already gone must fail, not hang. The
+     * sweep that fails pending requests runs once, at disconnect, so anything
+     * sent afterwards would otherwise sit in the outbox forever — in the game
+     * that is a session that never answers again once its agent has died.
+     */
+    @Test
+    void requestsSentAfterTheRemoteDisconnectedFailRatherThanHang() throws Exception {
+        remoteOut.close();
+        assertTrue(handler.closed.get(TIMEOUT_MS, TimeUnit.MILLISECONDS) == null
+                || handler.closed.isDone());
+
+        CompletableFuture<JsonElement> late = peer.request("session/prompt", new JsonObject());
+
+        ExecutionException thrown = assertThrows(ExecutionException.class,
+                () -> late.get(TIMEOUT_MS, TimeUnit.MILLISECONDS));
+        assertInstanceOf(IOException.class, thrown.getCause());
+        assertEquals(0, peer.pendingRequestCount(), "nothing should be left waiting");
+    }
+
     @Test
     void closingLocallyFailsInFlightRequests() {
         CompletableFuture<JsonElement> future = peer.request("initialize", new JsonObject());

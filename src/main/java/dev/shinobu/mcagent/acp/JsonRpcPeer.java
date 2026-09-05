@@ -85,6 +85,13 @@ public final class JsonRpcPeer implements AutoCloseable {
     private final Map<String, CompletableFuture<JsonElement>> pending = new ConcurrentHashMap<>();
     private final BlockingQueue<Object> outbox = new LinkedBlockingQueue<>();
     private final AtomicBoolean closed = new AtomicBoolean();
+    /**
+     * Set once the remote end is gone. Distinct from {@link #closed}, which
+     * only covers closing from this side: without it, a request sent after the
+     * peer died would sit in the outbox forever, because the one sweep that
+     * fails pending requests has already run.
+     */
+    private final AtomicBoolean broken = new AtomicBoolean();
 
     private final Thread reader;
     private final Thread writer;
@@ -114,6 +121,14 @@ public final class JsonRpcPeer implements AutoCloseable {
         CompletableFuture<JsonElement> future = new CompletableFuture<>();
         pending.put(id, future);
 
+        // Checked after registering, so a peer that breaks concurrently is
+        // caught either here or by the sweep in readLoop — never missed by both.
+        if (broken.get()) {
+            pending.remove(id);
+            future.completeExceptionally(new IOException("peer " + name + " is disconnected"));
+            return future;
+        }
+
         JsonObject msg = new JsonObject();
         msg.addProperty("jsonrpc", "2.0");
         msg.addProperty("id", numericId);
@@ -141,7 +156,7 @@ public final class JsonRpcPeer implements AutoCloseable {
     }
 
     private boolean enqueue(JsonObject msg) {
-        if (closed.get()) {
+        if (closed.get() || broken.get()) {
             return false;
         }
         return outbox.offer(msg.toString());
@@ -191,6 +206,7 @@ public final class JsonRpcPeer implements AutoCloseable {
                 handler.onTransportError("read failed on peer " + name, e);
             }
         } finally {
+            broken.set(true);
             failPending(new IOException("peer " + name + " disconnected"));
         }
     }
