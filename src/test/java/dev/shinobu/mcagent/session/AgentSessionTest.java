@@ -61,6 +61,24 @@ class AgentSessionTest {
     }
 
     /**
+     * The approval dialog is an inventory screen: a player can leave it open
+     * while the turn moves on and another request arrives. Clicking a button
+     * from the old one must not answer the new one.
+     */
+    @Test
+    void anOptionTheCurrentRequestDoesNotOfferIsRefused() {
+        CompletableFuture<String> waiting = session.beginPermission(requestWithNoRefusal());
+
+        assertFalse(session.decidePermission("allow_always"),
+                "that option belonged to a different request");
+        assertFalse(session.decidePermission(null));
+        assertFalse(waiting.isDone());
+        assertTrue(session.hasPendingPermission(), "the real question is still open");
+
+        assertTrue(session.decidePermission("allow"), "the offered option still works");
+    }
+
+    /**
      * The safety-critical case. Ending a session with a decision outstanding
      * must refuse it: leaving it unanswered blocks the agent forever, and
      * answering "allow" on the way out runs an edit the player never saw.

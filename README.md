@@ -77,6 +77,31 @@ through `wsl.exe`:
 
 No bridge process required.
 
+## Commands
+
+| | |
+|---|---|
+| `/agent new <path>` | start a session in a directory under a workspace root |
+| `/agent list` | every session you may control |
+| `/agent say <text>` | prompt the session in focus |
+| `/agent cancel` | interrupt the running turn |
+| `/agent tp` | go to the session in focus |
+| `/agent end` | close the session in focus |
+| `/agent permission [session]` | open the approval dialog |
+| `/agent diff [session]` | read the pending change as a book |
+| `/agent approve [session]` | allow, this once |
+| `/agent approve always [session]` | allow for the rest of the session |
+| `/agent deny [session]` | refuse |
+
+The session "in focus" is the nearest avatar within `avatar.focusRadius`,
+otherwise the last one you dealt with. Right-clicking an avatar puts it in
+focus and opens whatever it is waiting to show you.
+
+Approving from chat and approving from the dialog do the same thing. The
+dialog puts "always allow" behind a second confirmation because a button in an
+inventory is easy to hit by accident; typing the word `always` is not, so the
+command does not ask twice.
+
 ## Security
 
 Sessions edit real files and run real commands on the host.
@@ -109,6 +134,7 @@ editor-based agent will have the two fight over the same files.
 ```
 src/main/java/dev/shinobu/mcagent/
   acp/       ACP client — imports no Minecraft types, unit-testable on its own
+  diff/      line diff behind the approval dialog — also Minecraft-free
   session/   session lifecycle, agent process pool
   entity/    the allay avatar and how state is presented
   display/   terminal wall

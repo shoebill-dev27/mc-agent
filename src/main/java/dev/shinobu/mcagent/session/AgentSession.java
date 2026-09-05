@@ -121,10 +121,16 @@ public final class AgentSession {
     /**
      * Answers the outstanding permission.
      *
+     * <p>The option has to be one the agent actually offered for this request.
+     * A dialog can outlive the request it was opened for - the player leaves it
+     * up while the turn moves on, or answers one request as a second arrives -
+     * and forwarding a stale id would answer the wrong question, possibly
+     * allowing a tool the player never saw.
+     *
      * @return true if there was one to answer
      */
     public boolean decidePermission(String optionId) {
-        if (pendingDecision == null) {
+        if (pendingDecision == null || !offersOption(optionId)) {
             return false;
         }
         CompletableFuture<String> decision = pendingDecision;
@@ -136,6 +142,20 @@ public final class AgentSession {
 
     public boolean hasPendingPermission() {
         return pendingDecision != null;
+    }
+
+    /** The request the player is being asked about, or null. */
+    public PermissionRequest pendingPermission() {
+        return state.pendingPermission();
+    }
+
+    private boolean offersOption(String optionId) {
+        PermissionRequest request = state.pendingPermission();
+        if (request == null || optionId == null) {
+            return false;
+        }
+        return request.options().stream()
+                .anyMatch(option -> optionId.equals(option.optionId()));
     }
 
     /**

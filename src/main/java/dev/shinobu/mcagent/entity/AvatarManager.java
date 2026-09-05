@@ -42,6 +42,16 @@ public final class AvatarManager implements SessionManager.Observer {
     /** Asked before a session is ended by force, so a misclick cannot do it. */
     private KillConfirmation killConfirmation = (player, session) -> true;
 
+    /** Opens whatever a player should see when they walk up and ask. */
+    private Interaction interaction = (player, session) -> {
+    };
+
+    /** What right-clicking an avatar does. Set by the mod; the GUI lives elsewhere. */
+    @FunctionalInterface
+    public interface Interaction {
+        void onUse(ServerPlayer player, AgentSession session);
+    }
+
     /** Decides whether hitting an avatar should end its session now. */
     @FunctionalInterface
     public interface KillConfirmation {
@@ -63,6 +73,10 @@ public final class AvatarManager implements SessionManager.Observer {
 
     public void setKillConfirmation(KillConfirmation killConfirmation) {
         this.killConfirmation = killConfirmation;
+    }
+
+    public void setInteraction(Interaction interaction) {
+        this.interaction = interaction;
     }
 
     // ----------------------------------------------------------------- spawn
@@ -182,6 +196,36 @@ public final class AvatarManager implements SessionManager.Observer {
         }
 
         killConfirmation.confirm(serverPlayer, session);
+        return true;
+    }
+
+    /**
+     * Handles a player right-clicking an entity.
+     *
+     * <p>Always consumes the interaction when it lands on an avatar, whoever
+     * did it: an allay's own right-click behaviour is to take the item you are
+     * holding, which would quietly swallow a pickaxe. For the owner it also
+     * takes focus and opens whatever the session is waiting to show them.
+     *
+     * @return true when the interaction was on an avatar and must not go on
+     */
+    public boolean handleUse(Player player, Entity target) {
+        SessionAvatar avatar = avatarFor(target);
+        if (avatar == null) {
+            return false;
+        }
+        if (!(player instanceof ServerPlayer serverPlayer)) {
+            return true;
+        }
+
+        AgentSession session = avatar.session();
+        if (!SessionAccess.canControl(server, serverPlayer, session)) {
+            return true;
+        }
+        // Walking up to a session and poking it is as clear a statement of
+        // "this is the one I mean" as there is.
+        focus.put(serverPlayer.getUUID(), session.id());
+        interaction.onUse(serverPlayer, session);
         return true;
     }
 

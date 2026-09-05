@@ -2,6 +2,7 @@ package dev.shinobu.mcagent.acp.model;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import dev.shinobu.mcagent.diff.LineDiff;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,20 +20,19 @@ public sealed interface ToolContent {
 
     /** A file edit. {@code oldText} is null when the file is being created. */
     record Diff(String path, String oldText, String newText) implements ToolContent {
-        /** Lines added and removed, for the "+12 -3" summary on the approval dialog. */
+        /**
+         * Lines added and removed, for the "+12 -3" summary on the approval
+         * dialog. Counted from an actual diff rather than from the sizes of
+         * the two texts: ACP sends the whole file either side of an edit, so
+         * measuring those would report a two-line change to a 500-line file as
+         * "+500 -500".
+         */
         public int addedLines() {
-            return countLines(newText);
+            return LineDiff.addedLines(oldText, newText);
         }
 
         public int removedLines() {
-            return countLines(oldText);
-        }
-
-        private static int countLines(String text) {
-            if (text == null || text.isEmpty()) {
-                return 0;
-            }
-            return text.split("\n", -1).length;
+            return LineDiff.removedLines(oldText, newText);
         }
     }
 

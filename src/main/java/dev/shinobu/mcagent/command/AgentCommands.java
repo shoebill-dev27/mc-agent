@@ -7,9 +7,12 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.shinobu.mcagent.McAgent;
 import dev.shinobu.mcagent.McAgentRuntime;
 import dev.shinobu.mcagent.acp.AgentSpec;
+import dev.shinobu.mcagent.acp.model.PermissionRequest;
+import dev.shinobu.mcagent.acp.model.PermissionRequest.PermissionOption;
+import dev.shinobu.mcagent.gui.Approvals;
+import dev.shinobu.mcagent.gui.SessionText;
 import dev.shinobu.mcagent.security.SessionAccess;
 import dev.shinobu.mcagent.session.AgentSession;
-import dev.shinobu.mcagent.session.SessionState;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -19,6 +22,7 @@ import net.minecraft.server.level.ServerPlayer;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * The {@code /agent} commands.
@@ -43,6 +47,29 @@ public final class AgentCommands {
                 .then(Commands.literal("say")
                         .then(Commands.argument("text", StringArgumentType.greedyString())
                                 .executes(AgentCommands::say)))
+                .then(Commands.literal("permission")
+                        .executes(context -> openApproval(context, null))
+                        .then(Commands.argument("session", StringArgumentType.greedyString())
+                                .executes(context -> openApproval(context, session(context)))))
+                .then(Commands.literal("diff")
+                        .executes(context -> openDiff(context, null))
+                        .then(Commands.argument("session", StringArgumentType.greedyString())
+                                .executes(context -> openDiff(context, session(context)))))
+                .then(Commands.literal("approve")
+                        .executes(context -> decide(context, PermissionOption.ALLOW_ONCE, null))
+                        .then(Commands.literal("always")
+                                .executes(context -> decide(context, PermissionOption.ALLOW_ALWAYS, null))
+                                .then(Commands.argument("session", StringArgumentType.greedyString())
+                                        .executes(context -> decide(context,
+                                                PermissionOption.ALLOW_ALWAYS, session(context)))))
+                        .then(Commands.argument("session", StringArgumentType.greedyString())
+                                .executes(context -> decide(context,
+                                        PermissionOption.ALLOW_ONCE, session(context)))))
+                .then(Commands.literal("deny")
+                        .executes(context -> decide(context, PermissionOption.REJECT_ONCE, null))
+                        .then(Commands.argument("session", StringArgumentType.greedyString())
+                                .executes(context -> decide(context,
+                                        PermissionOption.REJECT_ONCE, session(context)))))
                 .then(Commands.literal("cancel")
                         .executes(AgentCommands::cancel))
                 .then(Commands.literal("tp")
@@ -126,13 +153,7 @@ public final class AgentCommands {
         }
 
         for (AgentSession session : sessions) {
-            SessionState state = session.state().state();
-            String activity = session.state().activeTool() == null
-                    ? state.name().toLowerCase(java.util.Locale.ROOT)
-                    : session.state().activeTool().describe();
-            context.getSource().sendSuccess(() -> Component.literal(
-                    session.name() + "  " + activity + "  " + session.workspace())
-                    .withStyle(colourOf(state)), false);
+            context.getSource().sendSuccess(() -> SessionText.summary(session), false);
         }
         return sessions.size();
     }
@@ -174,6 +195,96 @@ public final class AgentCommands {
         });
     }
 
+    // ----------------------------------------------------------- permissions
+
+    private static int openApproval(CommandContext<CommandSourceStack> context, String name)
+            throws CommandSyntaxException {
+        return withWaitingSession(context, name, (runtime, player, session) -> {
+            Approvals.open(player, runtime, session);
+            return 1;
+        });
+    }
+
+    private static int openDiff(CommandContext<CommandSourceStack> context, String name)
+            throws CommandSyntaxException {
+        return withWaitingSession(context, name, (runtime, player, session) -> {
+            Approvals.openDiff(player, runtime, session);
+            return 1;
+        });
+    }
+
+    /**
+     * Answers a request from chat, for anyone without the client mod or without
+     * the patience for a screen.
+     *
+     * <p>{@code /agent approve always} is not put behind the dialog's second
+     * confirmation. That confirmation exists because a button in an inventory
+     * is easy to hit by accident; typing the word "always" is not.
+     */
+    private static int decide(CommandContext<CommandSourceStack> context, String kind, String name)
+            throws CommandSyntaxException {
+        return withWaitingSession(context, name, (runtime, player, session) -> {
+            PermissionRequest request = session.pendingPermission();
+            if (request == null) {
+                context.getSource().sendFailure(Component.literal(
+                        session.name() + " is no longer waiting on an answer."));
+                return 0;
+            }
+            Optional<PermissionOption> option = PermissionOption.REJECT_ONCE.equals(kind)
+                    // Take whatever refusal the agent offered rather than
+                    // insisting on the usual one, so "no" always works.
+                    ? request.safeRefusal()
+                    : request.optionOfKind(kind);
+            if (option.isEmpty()) {
+                context.getSource().sendFailure(Component.literal(
+                        session.name() + " was not offered that choice: " + kind));
+                return 0;
+            }
+
+            PermissionOption chosen = option.orElseThrow();
+            if (!runtime.sessions().decide(session, chosen.optionId())) {
+                context.getSource().sendFailure(Component.literal(
+                        session.name() + " is no longer waiting on an answer."));
+                return 0;
+            }
+            String label = chosen.name() == null ? chosen.optionId() : chosen.name();
+            context.getSource().sendSuccess(() -> Component.literal(session.name() + ": " + label)
+                    .withStyle(chosen.allows() ? ChatFormatting.GREEN : ChatFormatting.RED), false);
+            return 1;
+        });
+    }
+
+    /** Resolves which waiting session a permission command means, or explains. */
+    private static int withWaitingSession(CommandContext<CommandSourceStack> context, String name,
+                                          SessionAction action) throws CommandSyntaxException {
+        ServerPlayer player = context.getSource().getPlayerOrException();
+        McAgentRuntime runtime = requireRuntime(context);
+        if (runtime == null) {
+            return 0;
+        }
+
+        AgentSession session = Approvals.resolve(runtime, player, name);
+        if (session != null) {
+            return action.run(runtime, player, session);
+        }
+
+        List<AgentSession> waiting = Approvals.waitingFor(runtime, player);
+        if (waiting.isEmpty()) {
+            context.getSource().sendFailure(Component.literal("Nothing is waiting for your approval."));
+        } else if (name != null) {
+            context.getSource().sendFailure(Component.literal("No session called " + name + " is waiting."));
+        } else {
+            context.getSource().sendFailure(Component.literal(
+                    "More than one session is waiting. Name one: "
+                            + waiting.stream().map(AgentSession::name).collect(Collectors.joining(", "))));
+        }
+        return 0;
+    }
+
+    private static String session(CommandContext<CommandSourceStack> context) {
+        return StringArgumentType.getString(context, "session");
+    }
+
     // --------------------------------------------------------------- helpers
 
     @FunctionalInterface
@@ -213,16 +324,6 @@ public final class AgentCommands {
             context.getSource().sendFailure(Component.literal("mc-agent is not running."));
         }
         return runtime;
-    }
-
-    private static ChatFormatting colourOf(SessionState state) {
-        return switch (state) {
-            case IDLE -> ChatFormatting.GRAY;
-            case THINKING -> ChatFormatting.BLUE;
-            case WORKING -> ChatFormatting.AQUA;
-            case AWAITING -> ChatFormatting.RED;
-            case ERROR -> ChatFormatting.DARK_RED;
-        };
     }
 
     private static String rootCause(Throwable error) {

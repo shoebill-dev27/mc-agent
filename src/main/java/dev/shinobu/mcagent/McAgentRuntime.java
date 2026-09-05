@@ -4,6 +4,8 @@ import dev.shinobu.mcagent.acp.AgentProcessPool;
 import dev.shinobu.mcagent.config.ModConfig;
 import dev.shinobu.mcagent.entity.AvatarManager;
 import dev.shinobu.mcagent.entity.SessionAvatar;
+import dev.shinobu.mcagent.gui.Approvals;
+import dev.shinobu.mcagent.gui.SessionText;
 import dev.shinobu.mcagent.session.SessionManager;
 import net.minecraft.server.MinecraftServer;
 
@@ -61,9 +63,21 @@ public final class McAgentRuntime {
                 config.avatar.focusRadius, diagnostics);
         sessions.addObserver(avatars);
 
+        McAgentRuntime runtime = new McAgentRuntime(server, config, pool, sessions, avatars);
+        sessions.addObserver(Approvals.notifier(runtime));
+
+        // Poking an avatar is the in-world way of asking it what it wants.
+        avatars.setInteraction((player, session) -> {
+            if (session.hasPendingPermission()) {
+                Approvals.open(player, runtime, session);
+            } else {
+                player.sendSystemMessage(SessionText.summary(session));
+            }
+        });
+
         McAgent.LOGGER.info("mc-agent ready: {} agent(s) configured, {} workspace root(s)",
                 config.agents.size(), config.workspaceRoots.size());
-        return new McAgentRuntime(server, config, pool, sessions, avatars);
+        return runtime;
     }
 
     public MinecraftServer server() {
