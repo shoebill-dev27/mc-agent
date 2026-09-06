@@ -67,6 +67,11 @@ public final class Approvals {
                     .withStyle(ChatFormatting.RED));
             return;
         }
+        if (player.containerMenu instanceof ApprovalMenu already && already.isAsking(session, request)) {
+            // Reopening would throw away the confirmation step the player may
+            // be halfway through, and right-clicking twice is not a decision.
+            return;
+        }
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) ->
                         new ApprovalMenu(containerId, inventory, runtime, session, request),

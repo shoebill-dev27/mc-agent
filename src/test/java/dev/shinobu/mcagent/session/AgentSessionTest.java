@@ -114,6 +114,29 @@ class AgentSessionTest {
         assertTrue(session.hasPendingPermission());
     }
 
+    /**
+     * Option ids belong to the request that offered them. Refusing a superseded
+     * request with the arriving request's id sends the agent an id that means
+     * nothing for the call it is actually blocked on.
+     */
+    @Test
+    void aSupersededRequestIsRefusedWithItsOwnOptions() throws Exception {
+        CompletableFuture<String> first = session.beginPermission(requestWithOptionIds("keep-1", "drop-1"));
+
+        session.beginPermission(requestWithOptionIds("keep-2", "drop-2"));
+
+        assertEquals("drop-1", first.get(), "refused with the id the first request offered");
+    }
+
+    private static PermissionRequest requestWithOptionIds(String allowId, String rejectId) {
+        return PermissionRequest.parse(JsonParser.parseString("""
+                {"sessionId":"s1",
+                 "options":[{"kind":"allow_once","name":"Allow","optionId":"%s"},
+                            {"kind":"reject_once","name":"Reject","optionId":"%s"}],
+                 "toolCall":{"toolCallId":"t1","title":"Write x.txt","kind":"edit"}}
+                """.formatted(allowId, rejectId)).getAsJsonObject());
+    }
+
     @Test
     void aDisconnectRefusesWhateverWasOutstanding() throws Exception {
         CompletableFuture<String> waiting = session.beginPermission(request());

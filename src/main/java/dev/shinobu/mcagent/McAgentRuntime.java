@@ -5,6 +5,7 @@ import dev.shinobu.mcagent.config.ModConfig;
 import dev.shinobu.mcagent.entity.AvatarManager;
 import dev.shinobu.mcagent.entity.SessionAvatar;
 import dev.shinobu.mcagent.gui.Approvals;
+import dev.shinobu.mcagent.gui.KillMenu;
 import dev.shinobu.mcagent.gui.SessionText;
 import dev.shinobu.mcagent.session.SessionManager;
 import net.minecraft.server.MinecraftServer;
@@ -67,13 +68,16 @@ public final class McAgentRuntime {
         sessions.addObserver(Approvals.notifier(runtime));
 
         // Poking an avatar is the in-world way of asking it what it wants.
-        avatars.setInteraction((player, session) -> {
+        avatars.setUseAction((player, session) -> {
             if (session.hasPendingPermission()) {
                 Approvals.open(player, runtime, session);
             } else {
                 player.sendSystemMessage(SessionText.summary(session));
             }
         });
+
+        // Hitting one is how a session ends, once you say you meant it.
+        avatars.setHitAction((player, session) -> KillMenu.open(player, runtime, session));
 
         McAgent.LOGGER.info("mc-agent ready: {} agent(s) configured, {} workspace root(s)",
                 config.agents.size(), config.workspaceRoots.size());

@@ -95,7 +95,8 @@ No bridge process required.
 
 The session "in focus" is the nearest avatar within `avatar.focusRadius`,
 otherwise the last one you dealt with. Right-clicking an avatar puts it in
-focus and opens whatever it is waiting to show you.
+focus and opens whatever it is waiting to show you; hitting one asks whether
+you meant to end it.
 
 Approving from chat and approving from the dialog do the same thing. The
 dialog puts "always allow" behind a second confirmation because a button in an

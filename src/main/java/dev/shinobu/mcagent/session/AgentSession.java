@@ -110,8 +110,10 @@ public final class AgentSession {
         // A second request while one is outstanding should not be possible —
         // the agent blocks on the first — but if it happens, refusing the older
         // one is safer than leaving the agent waiting forever on a request the
-        // player can no longer see.
-        refuseAnyPendingDecision(request);
+        // player can no longer see. It is refused with its own options, not the
+        // arriving request's: option ids are scoped to the request that offered
+        // them, so answering one with another's id is answering nonsense.
+        refuseAnyPendingDecision();
 
         pendingDecision = new CompletableFuture<>();
         state.onPermissionRequested(request);
@@ -164,22 +166,23 @@ public final class AgentSession {
      * an unanswered request would otherwise block the agent indefinitely, and
      * defaulting to "allow" would let a tool run that nobody approved.
      */
-    private void refuseAnyPendingDecision(PermissionRequest request) {
+    private void refuseAnyPendingDecision() {
         if (pendingDecision == null) {
             return;
         }
         CompletableFuture<String> decision = pendingDecision;
         pendingDecision = null;
-        String refusal = request == null
+        PermissionRequest outstanding = state.pendingPermission();
+        String refusal = outstanding == null
                 ? null
-                : request.safeRefusal().map(PermissionRequest.PermissionOption::optionId).orElse(null);
+                : outstanding.safeRefusal().map(PermissionRequest.PermissionOption::optionId).orElse(null);
         // A null completion is read as "cancelled" by the connection, which is
         // also a refusal — so either way the tool does not run.
         decision.complete(refusal);
     }
 
     void abandonPendingDecision() {
-        refuseAnyPendingDecision(state.pendingPermission());
+        refuseAnyPendingDecision();
         state.onPermissionResolved();
     }
 

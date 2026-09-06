@@ -39,27 +39,22 @@ public final class AvatarManager implements SessionManager.Observer {
     private final SessionAvatar.AvatarSettings settings;
     private final BiConsumer<String, Throwable> diagnostics;
 
-    /** Asked before a session is ended by force, so a misclick cannot do it. */
-    private KillConfirmation killConfirmation = (player, session) -> true;
-
-    /** Opens whatever a player should see when they walk up and ask. */
-    private Interaction interaction = (player, session) -> {
+    /** Opened when someone hits an avatar; a stray swing must not end a session. */
+    private AvatarAction onHit = (player, session) -> {
     };
 
-    /** What right-clicking an avatar does. Set by the mod; the GUI lives elsewhere. */
-    @FunctionalInterface
-    public interface Interaction {
-        void onUse(ServerPlayer player, AgentSession session);
-    }
+    /** Opened when someone right-clicks an avatar. */
+    private AvatarAction onUse = (player, session) -> {
+    };
 
-    /** Decides whether hitting an avatar should end its session now. */
+    /**
+     * Something a player does to an avatar. The screens live in the gui
+     * package, which knows about sessions; this package only knows how to
+     * notice the gesture.
+     */
     @FunctionalInterface
-    public interface KillConfirmation {
-        /**
-         * @return true to end the session immediately; false to swallow the hit,
-         *         having presumably opened a confirmation screen instead
-         */
-        boolean confirm(ServerPlayer player, AgentSession session);
+    public interface AvatarAction {
+        void run(ServerPlayer player, AgentSession session);
     }
 
     public AvatarManager(MinecraftServer server, SessionAvatar.AvatarSettings settings,
@@ -71,12 +66,12 @@ public final class AvatarManager implements SessionManager.Observer {
         } : diagnostics;
     }
 
-    public void setKillConfirmation(KillConfirmation killConfirmation) {
-        this.killConfirmation = killConfirmation;
+    public void setHitAction(AvatarAction onHit) {
+        this.onHit = onHit;
     }
 
-    public void setInteraction(Interaction interaction) {
-        this.interaction = interaction;
+    public void setUseAction(AvatarAction onUse) {
+        this.onUse = onUse;
     }
 
     // ----------------------------------------------------------------- spawn
@@ -195,7 +190,8 @@ public final class AvatarManager implements SessionManager.Observer {
             return true;
         }
 
-        killConfirmation.confirm(serverPlayer, session);
+        focus.put(serverPlayer.getUUID(), session.id());
+        onHit.run(serverPlayer, session);
         return true;
     }
 
@@ -225,7 +221,7 @@ public final class AvatarManager implements SessionManager.Observer {
         // Walking up to a session and poking it is as clear a statement of
         // "this is the one I mean" as there is.
         focus.put(serverPlayer.getUUID(), session.id());
-        interaction.onUse(serverPlayer, session);
+        onUse.run(serverPlayer, session);
         return true;
     }
 

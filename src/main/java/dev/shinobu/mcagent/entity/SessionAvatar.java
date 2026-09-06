@@ -56,6 +56,9 @@ public final class SessionAvatar {
     private static final int MAX_ATTENTION_BELLS = 3;
     private static final long BELL_INTERVAL_MS = 3_000;
 
+    /** How far the owner may wander before the avatar comes to them again. */
+    private static final double ASK_FOLLOW_DISTANCE_SQR = 6 * 6;
+
     private final AgentSession session;
     private final ServerLevel level;
     private final Allay body;
@@ -64,6 +67,13 @@ public final class SessionAvatar {
 
     private Vec3 anchor;
     private double orbitPhase;
+
+    /** Where the avatar parked itself to ask; held until the owner moves off. */
+    private Vec3 askPosition;
+
+    /** The team the body is currently on, so it is not rejoined every refresh. */
+    private TeamColor teamColour;
+
     private SessionState lastState = SessionState.IDLE;
     private String lastPanelText = "";
     private long lastPanelRefreshMs;
@@ -198,12 +208,18 @@ public final class SessionAvatar {
 
     private Vec3 targetPosition(SessionState state, ServerPlayer owner) {
         if (state == SessionState.AWAITING && owner != null) {
-            // Come and ask: hover just in front of the owner's face, close
-            // enough that the diff on the panel is readable.
-            Vec3 eye = owner.getEyePosition();
-            Vec3 forward = owner.getLookAngle().normalize().scale(2.0);
-            return eye.add(forward).subtract(0, 0.4, 0);
+            // Come and ask, then stop. Recomputing this every tick would weld
+            // the avatar to the middle of the owner's screen for as long as the
+            // request stands — which, with the default of no timeout, is until
+            // they answer. It parks in front of them once and only moves again
+            // if they walk away from it.
+            if (askPosition == null
+                    || owner.position().distanceToSqr(askPosition) > ASK_FOLLOW_DISTANCE_SQR) {
+                askPosition = askingSpot(owner);
+            }
+            return askPosition;
         }
+        askPosition = null;
 
         double speed = AvatarStyle.orbitSpeed(state);
         if (speed == 0) {
@@ -214,6 +230,18 @@ public final class SessionAvatar {
                 Math.cos(orbitPhase) * settings.orbitRadius(),
                 Math.sin(orbitPhase * 0.5) * 0.15,
                 Math.sin(orbitPhase) * settings.orbitRadius());
+    }
+
+    /**
+     * Eye height, two blocks ahead of where the owner is facing, flattened so
+     * that looking up or down when the request lands does not park the avatar
+     * in the ceiling or the floor.
+     */
+    private static Vec3 askingSpot(ServerPlayer owner) {
+        Vec3 look = owner.getLookAngle();
+        Vec3 flat = new Vec3(look.x, 0, look.z);
+        Vec3 forward = (flat.lengthSqr() < 1.0e-4 ? new Vec3(0, 0, 1) : flat.normalize()).scale(2.0);
+        return owner.getEyePosition().add(forward).subtract(0, 0.3, 0);
     }
 
     private void onStateChanged(SessionState from, SessionState to, ServerPlayer owner) {
@@ -334,31 +362,45 @@ public final class SessionAvatar {
     private void applyGlow(SessionState state) {
         boolean shouldGlow = AvatarStyle.glows(state);
         body.setGlowingTag(shouldGlow);
-        if (!shouldGlow) {
+
+        TeamColor wanted = shouldGlow ? AvatarStyle.glowColour(state) : null;
+        if (wanted == teamColour) {
+            // Scoreboard.addPlayerToTeam removes and re-adds unconditionally,
+            // and every one of those is a team packet to every player on the
+            // server. This runs several times a second per avatar, so it has to
+            // do nothing at all when the colour has not moved.
+            return;
+        }
+        teamColour = wanted;
+
+        Scoreboard scoreboard = level.getScoreboard();
+        if (wanted == null) {
+            leaveTeam(scoreboard);
             return;
         }
 
-        Scoreboard scoreboard = level.getScoreboard();
-        TeamColor colour = AvatarStyle.glowColour(state);
-        String teamName = "mcagent_" + colour.getSerializedName();
-
+        String teamName = "mcagent_" + wanted.getSerializedName();
         PlayerTeam team = scoreboard.getPlayerTeam(teamName);
         if (team == null) {
             team = scoreboard.addPlayerTeam(teamName);
-            team.setColor(Optional.of(colour));
+            team.setColor(Optional.of(wanted));
         }
         scoreboard.addPlayerToTeam(body.getScoreboardName(), team);
+    }
+
+    private void leaveTeam(Scoreboard scoreboard) {
+        PlayerTeam current = scoreboard.getPlayersTeam(body.getScoreboardName());
+        if (current != null) {
+            scoreboard.removePlayerFromTeam(body.getScoreboardName(), current);
+        }
     }
 
     // --------------------------------------------------------------- teardown
 
     /** Takes the avatar out of the world. */
     public void remove() {
-        Scoreboard scoreboard = level.getScoreboard();
-        PlayerTeam team = scoreboard.getPlayersTeam(body.getScoreboardName());
-        if (team != null) {
-            scoreboard.removePlayerFromTeam(body.getScoreboardName(), team);
-        }
+        leaveTeam(level.getScoreboard());
+        teamColour = null;
         body.discard();
         panel.discard();
     }

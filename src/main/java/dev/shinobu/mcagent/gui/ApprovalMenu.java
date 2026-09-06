@@ -61,6 +61,11 @@ public final class ApprovalMenu extends ReadOnlyChestMenu {
         drawChoice();
     }
 
+    /** True when this screen is already asking exactly this question. */
+    boolean isAsking(AgentSession about, PermissionRequest question) {
+        return this.session == about && this.request == question;
+    }
+
     /** The screen's title. */
     public static Component title(PermissionRequest request) {
         String tool = DiffBook.title(request);
