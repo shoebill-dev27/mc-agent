@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/mc-agent-banner.png" alt="mc-agent — Minecraft as a UI for your AI coding agents" width="100%">
+</p>
+
 # mc-agent
 
 Operate AI coding agents from inside Minecraft.
